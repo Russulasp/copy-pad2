@@ -1,0 +1,122 @@
+<!-- index.html -->
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>コピーPad mini</title>
+  <link rel="stylesheet" href="styles.css">
+  <meta name="color-scheme" content="light dark">
+</head>
+<body>
+  <header class="header">
+    <h1>コピーPad mini</h1>
+    <p class="muted">snippets.json を読み込んで、タップ一発で本文をコピー</p>
+  </header>
+
+  <main class="main">
+    <div id="list" class="grid" role="list" aria-label="スニペット一覧"></div>
+    <p id="empty" class="empty muted" hidden>スニペットがありません。snippets.json を確認してください。</p>
+  </main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" aria-atomic="true"></div>
+
+  <script>
+  (function () {
+    const list = document.getElementById('list');
+    const empty = document.getElementById('empty');
+    const toast = document.getElementById('toast');
+
+    // 起動時に JSON を読む（配列形式 または {snippets: []} の両対応）
+    init();
+    async function init() {
+      try {
+        const res = await fetch('snippets.json', { cache: 'no-store' });
+        if (!res.ok) throw new Error('snippets.json が読み込めませんでした');
+        const raw = await res.json();
+        const items = Array.isArray(raw) ? raw : (raw && Array.isArray(raw.snippets) ? raw.snippets : []);
+        render(items);
+      } catch (e) {
+        console.error(e);
+        showEmpty('snippets.json の読み込みに失敗しました。');
+      }
+    }
+
+    function render(items) {
+      list.innerHTML = '';
+      if (!items || items.length === 0) {
+        showEmpty();
+        return;
+      }
+      empty.hidden = true;
+
+      const frag = document.createDocumentFragment();
+      for (const s of items) {
+        // 最低限のバリデーション
+        if (!s || typeof s.title !== 'string' || typeof s.text !== 'string') continue;
+
+        const article = document.createElement('article');
+        article.className = 'card';
+        article.setAttribute('role', 'listitem');
+
+        const title = document.createElement('h2');
+        title.className = 'card-title';
+        title.textContent = s.title;
+
+        const sub = document.createElement('p');
+        sub.className = 'card-sub';
+        sub.textContent = s.text.replace(/\s+/g, ' ').slice(0, 100);
+
+        const btn = document.createElement('button');
+        btn.className = 'btn';
+        btn.type = 'button';
+        btn.setAttribute('aria-label', `${s.title} をコピー`);
+        btn.textContent = 'コピー';
+        btn.addEventListener('click', () => copyText(s.text));
+
+        article.append(title, sub, btn);
+        frag.appendChild(article);
+      }
+      list.appendChild(frag);
+    }
+
+    function showEmpty(msg) {
+      if (msg) empty.textContent = msg;
+      empty.hidden = false;
+    }
+
+    async function copyText(text) {
+      try {
+        if (navigator.clipboard && window.isSecureContext) {
+          await navigator.clipboard.writeText(text);
+          showToast('コピーしました');
+          return true;
+        }
+      } catch (e) {
+        // 続いてフォールバックへ
+      }
+      // フォールバック（execCommand）
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      ta.setSelectionRange(0, ta.value.length);
+      const ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      showToast(ok ? 'コピーしました' : 'コピーに失敗しました');
+      return ok;
+    }
+
+    function showToast(msg) {
+      toast.textContent = msg;
+      toast.classList.add('show');
+      clearTimeout(showToast._t);
+      showToast._t = setTimeout(() => toast.classList.remove('show'), 1300);
+    }
+  })();
+  </script>
+</body>
+</html>
